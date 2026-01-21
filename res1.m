@@ -435,4 +435,3 @@ xlabel('Molecular weight');
 ylabel('H/M (K)');
 legend('H^{res}', 'H^{ig}', 'H^{tot}', 'Location', 'northwest');
 grid on;
-
