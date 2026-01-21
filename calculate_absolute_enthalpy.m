@@ -5,7 +5,6 @@ function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calcula
 %   H^res = -R*T^2 * sum(z_i * d(ln phi_i)/dT)              (Eq. 9)
 %   H_i^ig(T) = H_i^ig(T_ref) + integral(Cp_i dT, T_ref, T) (Eq. 10)
 %   Cp_i = C1 + C2*T + C3*T^2 + C4*T^3                      (Eq. 11)
-%
 
 % INPUTS:
 %   T          : Temperature [K]
@@ -20,8 +19,7 @@ function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calcula
 %                Cp = C1 + C2*T + C3*T^2 + C4*T^3 [J/(mol·K)]
 %   H_ig_ref   : Ideal gas enthalpy at T_ref=273.15 K [J/mol] (column vector)
 %                (From Table 6: H_ig_ref = (H_ig/(M*R)) * M * R)
-%
-% =========================================================================
+
 % OUTPUTS:
 %   H_abs          : Absolute molar enthalpy for each component [J/mol]
 %   H_mix          : Mixture absolute molar enthalpy [J/mol]
@@ -29,8 +27,6 @@ function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calcula
 %   H_res_specific : Residual specific enthalpy H_res/M [J/g]
 %   H_abs_specific : Absolute specific enthalpy H_abs/M [J/g]
 
-%
-% =========================================================================
 % USAGE EXAMPLE (Reservoir 1 from Pedersen 2015):
 %
 %   % Table 6 values: H_ig/(M*R) in K/g
@@ -58,7 +54,6 @@ acentric = acentric(:);
 Mw = Mw(:);
 H_ig_ref = H_ig_ref(:);
 
-
 H_ig = zeros(n, 1);
 
 for i = 1:n
@@ -67,7 +62,6 @@ for i = 1:n
     C3 = Cp_coeffs(i, 3);
     C4 = Cp_coeffs(i, 4);
     
-
     delta_H_ig = C1 * (T - T_ref) + ...
                  C2 / 2 * (T^2 - T_ref^2) + ...
                  C3 / 3 * (T^3 - T_ref^3) + ...
@@ -78,12 +72,8 @@ end
 
 H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, R);
 
-
 H_abs = H_ig + H_res;
-
-
 H_mix = sum(comp .* H_abs);
-
 H_ig_specific = H_ig ./ Mw;      % [J/g]
 H_res_specific = H_res ./ Mw;    % [J/g]
 H_abs_specific = H_abs ./ Mw;    % [J/g]
@@ -101,7 +91,6 @@ function H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, 
 
 n = length(comp);
 H_res = zeros(n, 1);
-
 
 % Step size for numerical differentiation
 % Use relative step for better numerical stability
