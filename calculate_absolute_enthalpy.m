@@ -28,6 +28,14 @@ function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calcula
 %   H_ig_specific  : Ideal gas specific enthalpy H_ig/M [J/g]
 %   H_res_specific : Residual specific enthalpy H_res/M [J/g]
 %   H_abs_specific : Absolute specific enthalpy H_abs/M [J/g]
+
+
+
+
+
+
+
+
 %
 % =========================================================================
 % USAGE EXAMPLE (Reservoir 1 from Pedersen 2015):
@@ -60,6 +68,22 @@ H_ig_ref = H_ig_ref(:);
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 H_ig = zeros(n, 1);
 
 for i = 1:n
@@ -73,9 +97,11 @@ for i = 1:n
                  C2 / 2 * (T^2 - T_ref^2) + ...
                  C3 / 3 * (T^3 - T_ref^3) + ...
                  C4 / 4 * (T^4 - T_ref^4);
-    
+
     H_ig(i) = H_ig_ref(i) + delta_H_ig;
 end
+
+
 
 
 H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, R);
@@ -85,6 +111,8 @@ H_abs = H_ig + H_res;
 
 
 H_mix = sum(comp .* H_abs);
+
+
 
 
 
@@ -106,6 +134,7 @@ function H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, 
 n = length(comp);
 H_res = zeros(n, 1);
 
+
 % Step size for numerical differentiation
 % Use relative step for better numerical stability
 dT = max(0.1, 1e-4 * T);  % At least 0.1 K, or 0.01% of T
@@ -114,7 +143,7 @@ dT = max(0.1, 1e-4 * T);  % At least 0.1 K, or 0.01% of T
 try
     [phi_minus, ~] = fugacitycoef_multicomp(comp, P, T - dT, Pc, Tc, acentric, BIP);
     [phi_plus, ~] = fugacitycoef_multicomp(comp, P, T + dT, Pc, Tc, acentric, BIP);
-    
+
     % Central difference for d(ln phi)/dT
     for i = 1:n
         if phi_plus(i) > 0 && phi_minus(i) > 0
@@ -123,6 +152,13 @@ try
         else
             % Fallback: use forward difference
             H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
+
+
+
+
+
+
+
         end
     end
     
@@ -132,6 +168,17 @@ catch ME
             'Central difference failed: %s. Using forward difference.', ME.message);
     for i = 1:n
         H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
+
+
+
+
+
+
+
+
+
+
+
     end
 end
 
