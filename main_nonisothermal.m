@@ -73,6 +73,8 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
     
 
     comp_ref = comp_ref(:);
+    comp_ref = comp_ref / sum(comp_ref) ; 
+    
     M_gmol = M_gmol(:);
     Pc = Pc(:);
     Tc = Tc(:);
@@ -120,7 +122,7 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
         
         % Full thermal term: Mᵢ[g/mol] * enthalpy_diff[J/g] * ΔT[K] / (R * T_h * T_ref)
         % Units: [g/mol] * [J/g] * [K] / ([J/(mol·K)] * [K] * [K]) = dimensionless
-        thermal_term = (M_gmol(i) * enthalpy_diff * delta_T) / (R * temp_h * temp_h);
+        thermal_term = (M_gmol(i) * enthalpy_diff * delta_T) / (R * temp_h * temp_ref);
         
         % Target fugacity at depth h
         ln_f_h = log(f_ref(i)) + grav_term - thermal_term;
@@ -214,7 +216,7 @@ function F = residual_haase(x, f_target, T, Pc, Tc, acentric, BIP, nc)
     [phi, ~] = fugacitycoef_multicomp(z_norm, P, T, Pc, Tc, acentric, BIP);
     
     % Current fugacity
-    f_current = phi .* z * P;
+    f_current = phi .* z_norm * P;
     
     % Residual equations
     F = zeros(nc+1, 1);
