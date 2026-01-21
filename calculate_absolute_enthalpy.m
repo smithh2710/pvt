@@ -1,143 +1,166 @@
-function [H_abs_components, H_abs_mixture, H_ig_specific, H_res_specific, H_abs_specific] = calculate_absolute_enthalpy(temp, press, comp, Pc, Tc, acentric, BIP, Mw, Cp_coeffs, H_ig_ref_option)
-% Calculate absolute enthalpy for each component and mixture
-% Based on Pedersen & Hjermstad (2006) SPE 101275
-%
-% Inputs:
-% temp - Temperature in Kelvin
-% press - Pressure in Pa
-% comp - Mole fraction vector for all components (will be normalized)
-% Pc - Critical pressure vector (Pa)
-% Tc - Critical temperature vector (K)
-% acentric - Acentric factor vector
-% BIP - Binary interaction parameters matrix
-% Mw - Molecular weights vector (g/mol)
-% Cp_coeffs - Heat capacity coefficients matrix (n_comp x 4) [C1, C2, C3, C4]
-%             where Cp = C1 + C2*T + C3*T^2 + C4*T^3 (J/mol/K)
-% H_ig_ref_option - Either:
-%                   1) Vector of H_ig(273.15K) in J/mol for each component
-%                   2) Empty [] to use Pedersen correlation (Eq. 8)
-%                   3) Vector of H_ig/(M*R) values in K/g units
-%
-% Outputs:
-% H_abs_components - Absolute enthalpy for each component (J/mol)
-% H_abs_mixture - Mixture absolute enthalpy (J/mol)
-% H_ig_specific - Ideal gas specific enthalpy H_ig/M (J/MOL)
-% H_res_specific - Residual specific enthalpy H_res/M (J/MOL)
-% H_abs_specific - Absolute specific enthalpy H_abs/M (J/MOL)  ( J/g )
+function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calculate_absolute_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, Mw, Cp_coeffs, H_ig_ref)
 
-% Constants
-R = 8.314462618; % J/mol/K
-T_ref = 273.15; % Reference temperature (K)
+%   H_i^abs = H_i^ig + H_i^res                              (Eq. 7)
+%   H^abs = sum(z_i * H_i^abs)                              (Eq. 8)
+%   H^res = -R*T^2 * sum(z_i * d(ln phi_i)/dT)              (Eq. 9)
+%   H_i^ig(T) = H_i^ig(T_ref) + integral(Cp_i dT, T_ref, T) (Eq. 10)
+%   Cp_i = C1 + C2*T + C3*T^2 + C4*T^3                      (Eq. 11)
+%
 
-% Get dimensions and normalize composition
-n_comp = length(comp);
-comp = comp(:) / sum(comp);
+% INPUTS:
+%   T          : Temperature [K]
+%   P          : Pressure [Pa]
+%   comp       : Mole fractions [-] (column vector, will be normalized)
+%   Pc         : Critical pressures [Pa] (column vector)
+%   Tc         : Critical temperatures [K] (column vector)
+%   acentric   : Acentric factors [-] (column vector)
+%   BIP        : Binary interaction parameter matrix [n x n]
+%   Mw         : Molecular weights [g/mol] (column vector)
+%   Cp_coeffs  : Ideal gas heat capacity coefficients [n x 4] matrix
+%                Cp = C1 + C2*T + C3*T^2 + C4*T^3 [J/(mol·K)]
+%   H_ig_ref   : Ideal gas enthalpy at T_ref=273.15 K [J/mol] (column vector)
+%                (From Table 6: H_ig_ref = (H_ig/(M*R)) * M * R)
+%
+% =========================================================================
+% OUTPUTS:
+%   H_abs          : Absolute molar enthalpy for each component [J/mol]
+%   H_mix          : Mixture absolute molar enthalpy [J/mol]
+%   H_ig_specific  : Ideal gas specific enthalpy H_ig/M [J/g]
+%   H_res_specific : Residual specific enthalpy H_res/M [J/g]
+%   H_abs_specific : Absolute specific enthalpy H_abs/M [J/g]
+%
+% =========================================================================
+% USAGE EXAMPLE (Reservoir 1 from Pedersen 2015):
+%
+%   % Table 6 values: H_ig/(M*R) in K/g
+%   H_ig_per_mass_R = [-20; 20; 0; 7.5; 15; 17; 17; 25; 25; 33; ...];
+%   
+%   % Convert to J/mol
+%   R = 8.314462618;
+%   H_ig_ref = H_ig_per_mass_R .* Mw * R;
+%   
+%   % Calculate enthalpies
+%   [H_abs, H_mix, H_ig_spec, H_res_spec, H_abs_spec] = calculate_absolute_enthalpy(...
+%       T, P, comp, Pc, Tc, acentric, BIP, Mw, Cp_coeffs, H_ig_ref);
+
+R = 8.314462618;    % Universal gas constant [J/(mol·K)]
+T_ref = 273.15;     % Reference temperature [K]
+
+
+n = length(comp);
+comp = comp(:);
+comp = comp / sum(comp);  % Normalize mole fractions
+
 Pc = Pc(:);
 Tc = Tc(:);
 acentric = acentric(:);
 Mw = Mw(:);
+H_ig_ref = H_ig_ref(:);
 
-% Step 1: Determine reference ideal gas enthalpy at 273.15 K
-if isempty(H_ig_ref_option)
-    % Use Pedersen correlation (Equation 8 from paper)
-    H_ig_ref = R * (-1342 + 8.367 * Mw); % J/mol
 
-elseif length(H_ig_ref_option) == n_comp
-    % if max(abs(H_ig_ref_option)) < 1000
-    %     % Input is likely H_ig/(M*R) in K/g units
-    %     % H_ig_ref = H_ig_ref_option .* Mw * R; % Convert to J/mol
-    % else
-    %     % Input is already in J/mol
-        H_ig_ref = H_ig_ref_option;
-    % end
-else
-    error('H_ig_ref_option must be empty or have same length as composition vector');
-end
 
-% Step 2: Calculate ideal gas enthalpy at temperature T
-H_ig_components = zeros(n_comp, 1);
-for i = 1:n_comp
-    % Integration of Cp from T_ref to T
-    delta_H = Cp_coeffs(i, 1) * (temp - T_ref) + ...
-              Cp_coeffs(i, 2)/2 * (temp^2 - T_ref^2) + ...
-              Cp_coeffs(i, 3)/3 * (temp^3 - T_ref^3) + ...
-              Cp_coeffs(i, 4)/4 * (temp^4 - T_ref^4);
+
+H_ig = zeros(n, 1);
+
+for i = 1:n
+    C1 = Cp_coeffs(i, 1);
+    C2 = Cp_coeffs(i, 2);
+    C3 = Cp_coeffs(i, 3);
+    C4 = Cp_coeffs(i, 4);
     
-    H_ig_components(i) = H_ig_ref(i) + delta_H;
+
+    delta_H_ig = C1 * (T - T_ref) + ...
+                 C2 / 2 * (T^2 - T_ref^2) + ...
+                 C3 / 3 * (T^3 - T_ref^3) + ...
+                 C4 / 4 * (T^4 - T_ref^4);
+    
+    H_ig(i) = H_ig_ref(i) + delta_H_ig;
 end
 
-% Step 3: Calculate partial molar residual enthalpies
-H_res_components = calculate_residual_enthalpy_components(temp, press, comp, Pc, Tc, acentric, BIP);
 
-% Step 4: Calculate absolute enthalpies
-H_abs_components = H_ig_components + H_res_components;
+H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, R);
 
-% Step 5: Calculate mixture properties
-H_abs_mixture = sum(comp .* H_abs_components);
 
-% Step 6: Calculate specific enthalpies (per unit mass)
-H_ig_specific = H_ig_components ./ Mw;  % J/g
-H_res_specific = H_res_components ./ Mw; % J/g
-H_abs_specific = H_abs_components ./ Mw; % J/g
+H_abs = H_ig + H_res;
+
+
+H_mix = sum(comp .* H_abs);
+
+
+
+H_ig_specific = H_ig ./ Mw;      % [J/g]
+H_res_specific = H_res ./ Mw;    % [J/g]
+H_abs_specific = H_abs ./ Mw;    % [J/g]
 
 end
 
-%% Residual enthalpy calculation function
-function H_res_components = calculate_residual_enthalpy_components(temp, press, comp, Pc, Tc, acentric, BIP)
-% Calculate partial molar residual enthalpies using numerical differentiation
-% Based on H̃_i^res = -R*T^2 * (∂ln φ_i/∂T)_P,x
+function H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, R)
+% CALCULATE_RESIDUAL_ENTHALPY - Partial molar residual enthalpies
+%
+% Uses central difference numerical differentiation:
+%   H_res_i = -R * T^2 * (d ln(phi_i) / dT)_P,x
+%           ≈ -R * T^2 * [ln(phi_i(T+dT)) - ln(phi_i(T-dT))] / (2*dT)
+%
+% Input/Output: All vectors are column vectors
 
-R = 8.314462618; % J/mol/K
-n_comp = length(comp);
-H_res_components = zeros(n_comp, 1);
+n = length(comp);
+H_res = zeros(n, 1);
 
-% Adaptive step size for numerical differentiation
-dT = min(0.5, 0.001 * temp); % Use 0.5 K or 0.1% of temperature
+% Step size for numerical differentiation
+% Use relative step for better numerical stability
+dT = max(0.1, 1e-4 * T);  % At least 0.1 K, or 0.01% of T
 
-% Calculate fugacity coefficients at perturbed temperatures
+% Calculate fugacity coefficients at T-dT and T+dT
 try
-    [phi_minus, ~] = fugacitycoef_multicomp(comp, press, temp - dT, Pc, Tc, acentric, BIP);
-    [phi_plus, ~] = fugacitycoef_multicomp(comp, press, temp + dT, Pc, Tc, acentric, BIP);
+    [phi_minus, ~] = fugacitycoef_multicomp(comp, P, T - dT, Pc, Tc, acentric, BIP);
+    [phi_plus, ~] = fugacitycoef_multicomp(comp, P, T + dT, Pc, Tc, acentric, BIP);
     
-    % Use central difference for better accuracy
-    for i = 1:n_comp
+    % Central difference for d(ln phi)/dT
+    for i = 1:n
         if phi_plus(i) > 0 && phi_minus(i) > 0
             dln_phi_dT = (log(phi_plus(i)) - log(phi_minus(i))) / (2 * dT);
-            H_res_components(i) = -R * temp^2 * dln_phi_dT;
+            H_res(i) = -R * T^2 * dln_phi_dT;
         else
-            % Fallback to forward difference if needed
-            [phi_0, ~] = fugacitycoef_multicomp(comp, press, temp, Pc, Tc, acentric, BIP);
-            [phi_forward, ~] = fugacitycoef_multicomp(comp, press, temp + dT, Pc, Tc, acentric, BIP);
-            if phi_0(i) > 0 && phi_forward(i) > 0
-                dln_phi_dT = (log(phi_forward(i)) - log(phi_0(i))) / dT;
-                H_res_components(i) = -R * temp^2 * dln_phi_dT;
-            else
-                H_res_components(i) = 0; % Default if calculation fails
-            end
+            % Fallback: use forward difference
+            H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
         end
     end
-catch
-    % If fugacity calculation fails, try with smaller step
-    dT = dT / 10;
-    try
-        [phi_minus, ~] = fugacitycoef_multicomp(comp, press, temp - dT, Pc, Tc, acentric, BIP);
-        [phi_plus, ~] = fugacitycoef_multicomp(comp, press, temp + dT, Pc, Tc, acentric, BIP);
-        
-        for i = 1:n_comp
-            if phi_plus(i) > 0 && phi_minus(i) > 0
-                dln_phi_dT = (log(phi_plus(i)) - log(phi_minus(i))) / (2 * dT);
-                H_res_components(i) = -R * temp^2 * dln_phi_dT;
-            else
-                H_res_components(i) = 0;
-            end
-        end
-    catch
-        % Final fallback - return zeros
-        H_res_components = zeros(n_comp, 1);
+    
+catch ME
+    % If central difference fails, try forward difference for each component
+    warning('calculate_absolute_enthalpy:centralDiffFailed', ...
+            'Central difference failed: %s. Using forward difference.', ME.message);
+    for i = 1:n
+        H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
     end
 end
 
-% Ensure finite values
-H_res_components(~isfinite(H_res_components)) = 0;
+% Check for non-finite values and set to zero
+bad_idx = ~isfinite(H_res);
+if any(bad_idx)
+    warning('calculate_absolute_enthalpy:nonFiniteValues', ...
+            'Non-finite residual enthalpies detected for %d components. Setting to zero.', sum(bad_idx));
+    H_res(bad_idx) = 0;
+end
+
+end
+
+
+function H_res_i = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT)
+% Calculate residual enthalpy for a single component using forward difference
+
+try
+    [phi_0, ~] = fugacitycoef_multicomp(comp, P, T, Pc, Tc, acentric, BIP);
+    [phi_forward, ~] = fugacitycoef_multicomp(comp, P, T + dT, Pc, Tc, acentric, BIP);
+    
+    if phi_0(i) > 0 && phi_forward(i) > 0
+        dln_phi_dT = (log(phi_forward(i)) - log(phi_0(i))) / dT;
+        H_res_i = -R * T^2 * dln_phi_dT;
+    else
+        H_res_i = 0;
+    end
+catch
+    H_res_i = 0;
+end
 
 end
