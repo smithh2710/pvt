@@ -29,13 +29,6 @@ function [H_abs, H_mix, H_ig_specific, H_res_specific, H_abs_specific] = calcula
 %   H_res_specific : Residual specific enthalpy H_res/M [J/g]
 %   H_abs_specific : Absolute specific enthalpy H_abs/M [J/g]
 
-
-
-
-
-
-
-
 %
 % =========================================================================
 % USAGE EXAMPLE (Reservoir 1 from Pedersen 2015):
@@ -66,24 +59,6 @@ Mw = Mw(:);
 H_ig_ref = H_ig_ref(:);
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 H_ig = zeros(n, 1);
 
 for i = 1:n
@@ -101,9 +76,6 @@ for i = 1:n
     H_ig(i) = H_ig_ref(i) + delta_H_ig;
 end
 
-
-
-
 H_res = calculate_residual_enthalpy(T, P, comp, Pc, Tc, acentric, BIP, R);
 
 
@@ -111,10 +83,6 @@ H_abs = H_ig + H_res;
 
 
 H_mix = sum(comp .* H_abs);
-
-
-
-
 
 H_ig_specific = H_ig ./ Mw;      % [J/g]
 H_res_specific = H_res ./ Mw;    % [J/g]
@@ -154,11 +122,6 @@ try
             H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
 
 
-
-
-
-
-
         end
     end
     
@@ -168,16 +131,6 @@ catch ME
             'Central difference failed: %s. Using forward difference.', ME.message);
     for i = 1:n
         H_res(i) = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT);
-
-
-
-
-
-
-
-
-
-
 
     end
 end
@@ -191,7 +144,6 @@ if any(bad_idx)
 end
 
 end
-
 
 function H_res_i = calculate_single_component_H_res(i, T, P, comp, Pc, Tc, acentric, BIP, R, dT)
 % Calculate residual enthalpy for a single component using forward difference
