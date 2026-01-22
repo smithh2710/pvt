@@ -98,11 +98,11 @@ Cp_coeffs = [
     82.18,      2.706,   -1.05e-3,    1.32e-7;    % C30-C37
    115.26,      3.795,   -1.48e-3,    1.86e-7     % C38-C80
 ]; 
-% H_ig_ref_per_mass = [-20; 20; 0; 7.5; 15; 17; 17; 25; 25; 33; 2; 2; 2; 2; 93; 93; 93; 31; 31; 31; 8; 8];
-% H_ig_ref = H_ig_ref_per_mass  .* M_gmol * R ;
+H_ig_ref_per_mass = [-20; 20; 0; 7.5; 15; 17; 17; 25; 25; 33; 2; 2; 2; 2; 93; 93; 93; 31; 31; 31; 8; 8];
+H_ig_ref = H_ig_ref_per_mass  .* M_gmol * R ;
 
-H_ig_per_MR = (-1342 + 83.67.*M_gmol) ; 
-H_ig_ref = H_ig_per_MR * R  ;  % [J/mol]
+% H_ig_per_MR = (-1342 + 83.67.*M_gmol) ; 
+% H_ig_ref = H_ig_per_MR * R  ;  % [J/mol]
 
 % H_ig_ref = H_ig_ref - H_ig_ref(3);
 
