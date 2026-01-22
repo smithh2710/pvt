@@ -109,7 +109,29 @@ H_ig_ref = H_ig_per_MR * R  ;  % [J/mol]
 
 dTdh = 0.025;
 h = [0;175;204;228;327]; 
-[comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(h(3), 175, comp_ref, press_ref, temp_ref, dTdh, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref)
-% [comp_h, press_h, pressbub_h, pressdew_h] = main(h(3), 175, comp_ref, press_ref, temp_ref, Pc, Tc, acentric, BIP, M_gmol, 0)
+% [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(h(3), 175, comp_ref, press_ref, temp_ref, dTdh, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref)
+ % [comp_h, press_h, pressbub_h, pressdew_h] = main(h(5), 175, comp_ref, press_ref, temp_ref, Pc, Tc, acentric, BIP, M_gmol, 0)
 
 
+
+[H_abs, H_mix, H_ig_spec, H_res_spec, H_abs_spec] = calculate_absolute_enthalpy(temp_ref, press_ref, comp_ref, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref);
+%%
+R = 8.314462618;
+H_ig_plot = H_ig_spec  / R;
+H_res_plot = H_res_spec / R;
+H_tot_plot = H_abs_spec  / R;
+
+% Plot
+figure;
+idx = 3:length(M_gmol); % Skip N2, CO2
+plot(M_gmol(idx), H_res_plot(idx), 'b--', 'LineWidth', 2);
+hold on;
+plot (M_gmol(idx), H_ig_plot(idx), 'r-', 'LineWidth', 2);
+plot (M_gmol(idx), H_tot_plot(idx), 'k-', 'LineWidth', 2.5);
+
+xlim([0 700]);
+ylim([-50 950]); 
+xlabel('Molecular weight');
+ylabel('H/M (K)');
+legend('H^{res}', 'H^{ig}', 'H^{tot}', 'Location', 'northwest');
+grid on;
