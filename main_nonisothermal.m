@@ -170,6 +170,43 @@ function F = residual_haase_iterative(x, params)
     M_mix = sum(z_h_norm .* M_gmol);  % [g/mol]
     H_specific_mix = H_mix / M_mix;   % [J/g]
 
+    %% DEBUG: Print thermal term diagnostics (only first call)
+    persistent call_count
+    if isempty(call_count)
+        call_count = 0;
+    end
+    call_count = call_count + 1;
+    
+    if call_count == 1
+        fprintf('\n=== DEBUG: Thermal Term Check ===\n');
+        fprintf('delta_h = %.4f m\n', delta_h);
+        fprintf('delta_T = %.4f K\n', delta_T);
+        fprintf('temp_h = %.2f K\n', temp_h);
+        fprintf('temp_ref = %.2f K\n', temp_ref);
+        fprintf('M_mix = %.2f g/mol\n', M_mix);
+        fprintf('H_mix = %.2f J/mol\n', H_mix);
+        fprintf('H_specific_mix = %.4f J/g\n', H_specific_mix);
+        fprintf('\nComponent specific enthalpies H_i/M_i [J/g]:\n');
+        fprintf('  N2 (i=1):  %.4f\n', H_abs_specific(1));
+        fprintf('  CO2 (i=2): %.4f\n', H_abs_specific(2));
+        fprintf('  C1 (i=3):  %.4f\n', H_abs_specific(3));
+        fprintf('  C2 (i=4):  %.4f\n', H_abs_specific(4));
+        fprintf('\nEnthalpy differences (H_mix/M - H_i/M_i) [J/g]:\n');
+        fprintf('  C1: %.4f (positive means C1 prefers cold/top)\n', H_specific_mix - H_abs_specific(3));
+        
+        % Calculate terms for C1
+        i_C1 = 3;
+        grav_term_C1 = (M_kgmol(i_C1) * g * delta_h) / (R * temp_h);
+        enthalpy_diff_C1 = H_specific_mix - H_abs_specific(i_C1);
+        thermal_term_C1 = (M_gmol(i_C1) * enthalpy_diff_C1 * delta_T) / (R * temp_h * temp_ref);
+        
+        fprintf('\nTerms for C1 (methane):\n');
+        fprintf('  grav_term = %.6f\n', grav_term_C1);
+        fprintf('  thermal_term = %.6f\n', thermal_term_C1);
+        fprintf('  net (grav - thermal) = %.6f\n', grav_term_C1 - thermal_term_C1);
+        fprintf('  Effect: ln(f_C1_target) = ln(f_C1_ref) + %.6f\n', grav_term_C1 - thermal_term_C1);
+        fprintf('=================================\n\n');
+    end
 
     %% Calculate fugacity coefficients at current conditions
     [fugcoef_h, ~] = fugacitycoef_multicomp(z_h_norm, P_h, temp_h, Pc, Tc, acentric, BIP);
