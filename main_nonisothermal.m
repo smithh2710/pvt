@@ -1,32 +1,11 @@
 function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(h, h_ref, comp_ref, press_ref, temp_ref, dTdh, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref)
+% ... [keep existing header comments]
 
-% INPUTS:
-%   h           : Target depth [m]
-%   h_ref       : Reference depth [m]
-%   comp_ref    : Reference composition [mole fractions]
-%   press_ref   : Reference pressure [Pa]
-%   temp_ref    : Reference temperature [K]
-%   dTdh        : Temperature gradient [K/m] (positive = T increases with depth)
-%   Pc          : Critical pressures [Pa]
-%   Tc          : Critical temperatures [K]
-%   acentric    : Acentric factors [-]
-%   BIP         : Binary interaction parameter matrix
-%   M_gmol      : Molecular weights [g/mol]
-%   Cp_coeffs   : Ideal gas Cp coefficients [n x 4], Cp in [J/(mol·K)]
-%   H_ig_ref    : Ideal gas enthalpy at T_ref=273.15 K [J/mol]
-% OUTPUTS:
-%   comp_h     : Composition at depth h [mole fractions]
-%   press_h    : Pressure at depth h [Pa]
-%   temp_h     : Temperature at depth h [K]
-%   pressbub_h : Bubble point pressure at depth h [Pa]
-%   pressdew_h : Dew point pressure at depth h [Pa]
-
-    R = 8.3144598;        % Universal gas constant [J/(mol·K)]
-    g = 9.80665;          % Gravitational acceleration [m/s²]
+    R = 8.3144598;
+    g = 9.80665;
 
     n = length(comp_ref);
 
-    % Ensure column vectors and normalize
     comp_ref = comp_ref(:);
     comp_ref = comp_ref / sum(comp_ref);
     M_gmol = M_gmol(:);
@@ -37,10 +16,8 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
 
     M_kgmol = M_gmol / 1000;
 
-    % Temperature at target depth
-    delta_h = h - h_ref;
+    delta_h = - (h - h_ref );
     temp_h = temp_ref + dTdh * delta_h;
-    delta_T = temp_h - temp_ref;
 
     tol = 1e-10;
     maxiter = 1500;
@@ -52,11 +29,10 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
     % Initial guess
     initial_guess = [comp_ref; press_ref];
 
-    % Create parameter structure to pass to residual function
+    % Create parameter structure
     params.f_ref = f_ref;
     params.temp_ref = temp_ref;
     params.temp_h = temp_h;
-    params.delta_T = delta_T;
     params.delta_h = delta_h;
     params.Pc = Pc;
     params.Tc = Tc;
@@ -69,9 +45,11 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
     params.R = R;
     params.g = g;
     params.n = n;
+    params.comp_ref = comp_ref;       % ADD THIS
+    params.press_ref = press_ref;     % ADD THIS
 
-    % Solve using fsolve
-    residual_fun = @(x) residual_haase_iterative(x, params);
+    % Solve
+    residual_fun = @(x) residual_haase_corrected(x, params);
 
     options = optimoptions('fsolve', ...
         'Display', 'none', ...
@@ -87,17 +65,13 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
         warning('main_nonisothermal: fsolve did not converge (exitflag = %d)', exitflag);
     end
 
-    % Extract solution
     comp_h = solution(1:n);
     press_h = solution(end);
 
-    % Ensure valid composition
     comp_h = max(comp_h, 0);
     comp_h = comp_h / sum(comp_h);
 
-    %% Calculate Saturation Pressures at Depth h
-
-    % Bubble point pressure
+    % Bubble point
     try
         pressbub_ini = 260e5;
         [pressbub_h, ~] = pressbub_multicomp_newton(comp_h, pressbub_ini, temp_h, Pc, Tc, acentric, BIP, tol, maxiter);
@@ -108,7 +82,7 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
         pressbub_h = NaN;
     end
 
-    % Dew point pressure
+    % Dew point
     try
         pressdew_ini = 260e5;
         [pressdew_h, ~] = pressdew_multicomp_newton(comp_h, pressdew_ini, temp_h, Pc, Tc, acentric, BIP, tol, maxiter);
@@ -122,22 +96,16 @@ function [comp_h, press_h, temp_h, pressbub_h, pressdew_h] = main_nonisothermal(
 end
 
 
-function F = residual_haase_iterative(x, params)
-% RESIDUAL_HAASE_ITERATIVE - Residual function with iterative enthalpy calculation
+function F = residual_haase_corrected(x, params)
+% CORRECTED Haase residual function
 %
-% The key improvement: enthalpy terms are recalculated at each iteration
-% based on the current trial composition and pressure.
-%
-% Haase equilibrium:
-%   ln(f_i^h) = ln(f_i^ref) + grav_term - thermal_term
-%
-% where thermal_term depends on H^abs(z^h, P^h, T^h) and H_i^abs(z^h, P^h, T^h)
+% Key fix: Enthalpy terms calculated at REFERENCE conditions, not target conditions
+% This matches the Pedersen et al. (2015) formulation more closely
 
     % Extract parameters
     f_ref = params.f_ref;
     temp_ref = params.temp_ref;
     temp_h = params.temp_h;
-    delta_T = params.delta_T;
     delta_h = params.delta_h;
     Pc = params.Pc;
     Tc = params.Tc;
@@ -150,96 +118,57 @@ function F = residual_haase_iterative(x, params)
     R = params.R;
     g = params.g;
     n = params.n;
+    comp_ref = params.comp_ref;
+    press_ref = params.press_ref;
 
     % Extract current trial values
     z_h = x(1:n);
     P_h = x(end);
 
-    % Ensure positive and normalized composition
     z_h = max(z_h, 1e-15);
     z_h_norm = z_h / sum(z_h);
-
-    % Ensure positive pressure
     P_h = max(P_h, 1e5);
 
-    %% Calculate enthalpies at CURRENT iteration conditions (z_h, P_h, T_h)
-    % This is the key fix - enthalpies depend on the current state
-    [H_abs_i, H_mix, ~, ~, H_abs_specific] = calculate_absolute_enthalpy(temp_h, P_h, z_h_norm, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref);
+    %% Calculate enthalpies at REFERENCE conditions (not target!)
+    % This is a key point - Pedersen uses reference state enthalpies
+    [H_abs_ref, H_mix_ref, ~, ~, ~] = calculate_absolute_enthalpy(...
+        temp_ref, press_ref, comp_ref, Pc, Tc, acentric, BIP, M_gmol, Cp_coeffs, H_ig_ref);
 
-    % Mixture specific enthalpy [J/g]
-    M_mix = sum(z_h_norm .* M_gmol);  % [g/mol]
-    H_specific_mix = H_mix / M_mix;   % [J/g]
-
-    %% DEBUG: Print thermal term diagnostics (only first call)
-    persistent call_count
-    if isempty(call_count)
-        call_count = 0;
-    end
-    call_count = call_count + 1;
+    % Mixture molecular weight at reference [g/mol]
+    M_mix_ref = sum(comp_ref .* M_gmol);
     
-    if call_count == 1
-        fprintf('\n=== DEBUG: Thermal Term Check ===\n');
-        fprintf('delta_h = %.4f m\n', delta_h);
-        fprintf('delta_T = %.4f K\n', delta_T);
-        fprintf('temp_h = %.2f K\n', temp_h);
-        fprintf('temp_ref = %.2f K\n', temp_ref);
-        fprintf('M_mix = %.2f g/mol\n', M_mix);
-        fprintf('H_mix = %.2f J/mol\n', H_mix);
-        fprintf('H_specific_mix = %.4f J/g\n', H_specific_mix);
-        fprintf('\nComponent specific enthalpies H_i/M_i [J/g]:\n');
-        fprintf('  N2 (i=1):  %.4f\n', H_abs_specific(1));
-        fprintf('  CO2 (i=2): %.4f\n', H_abs_specific(2));
-        fprintf('  C1 (i=3):  %.4f\n', H_abs_specific(3));
-        fprintf('  C2 (i=4):  %.4f\n', H_abs_specific(4));
-        fprintf('\nEnthalpy differences (H_mix/M - H_i/M_i) [J/g]:\n');
-        fprintf('  C1: %.4f (positive means C1 prefers cold/top)\n', H_specific_mix - H_abs_specific(3));
-        
-        % Calculate terms for C1
-        i_C1 = 3;
-        grav_term_C1 = (M_kgmol(i_C1) * g * delta_h) / (R * temp_h);
-        enthalpy_diff_C1 = H_specific_mix - H_abs_specific(i_C1);
-        thermal_term_C1 = (M_gmol(i_C1) * enthalpy_diff_C1 * delta_T) / (R * temp_h * temp_ref);
-        
-        fprintf('\nTerms for C1 (methane):\n');
-        fprintf('  grav_term = %.6f\n', grav_term_C1);
-        fprintf('  thermal_term = %.6f\n', thermal_term_C1);
-        fprintf('  net (grav - thermal) = %.6f\n', grav_term_C1 - thermal_term_C1);
-        fprintf('  Effect: ln(f_C1_target) = ln(f_C1_ref) + %.6f\n', grav_term_C1 - thermal_term_C1);
-        fprintf('=================================\n\n');
-    end
+    % Specific enthalpies at reference [J/g]
+    H_specific_mix_ref = H_mix_ref / M_mix_ref;
+    H_specific_i_ref = H_abs_ref ./ M_gmol;
 
-    %% Calculate fugacity coefficients at current conditions
+    %% Calculate fugacity coefficients at TARGET conditions
     [fugcoef_h, ~] = fugacitycoef_multicomp(z_h_norm, P_h, temp_h, Pc, Tc, acentric, BIP);
-
-    % Current fugacity
     f_h_current = fugcoef_h .* z_h_norm * P_h;
 
-    %% Calculate target fugacity using Haase equation with CURRENT enthalpies
+    %% Calculate target fugacity using Haase equation
+    delta_T = temp_h - temp_ref;
     f_h_target = zeros(n, 1);
 
     for i = 1:n
-        % Gravitational term (same as isothermal)
+        % Gravitational term (POSITIVE for deeper locations)
         grav_term = (M_kgmol(i) * g * delta_h) / (R * temp_h);
 
-        % Thermal term using CURRENT enthalpies (this is the fix)
-        % H_abs_specific(i) is H_i^abs/M_i in [J/g]
-        enthalpy_diff = H_specific_mix - H_abs_specific(i);  % [J/g]
+        % Thermal term using REFERENCE enthalpies
+        % (H/M - H_i/M_i) at reference conditions
+        enthalpy_diff = H_specific_mix_ref - H_specific_i_ref(i);  % [J/g]
+        
+        % Haase thermal term: M_i * (H/M - H_i/M_i) * dT / (R * T * T_ref)
+        % Units: [g/mol] * [J/g] * [K] / ([J/(mol·K)] * [K] * [K]) = dimensionless
+        thermal_term = (M_kgmol(i) * enthalpy_diff * delta_T) / (R * temp_h * temp_ref);
 
-        % thermal_term = M_i[g/mol] * (H/M - H_i/M_i)[J/g] * dT[K] / (R * T_h * T_ref)
-        thermal_term = (M_gmol(i) * enthalpy_diff * delta_T) / (R * temp_h * temp_ref);
-
-        % Target fugacity
+        % Target fugacity: add gravity, subtract thermal
         ln_f_target = log(f_ref(i)) + grav_term - thermal_term;
         f_h_target(i) = exp(ln_f_target);
     end
 
     %% Residual equations
     F = zeros(n+1, 1);
-
-    % Fugacity matching: f_i^current - f_i^target = 0
     F(1:n) = f_h_current - f_h_target;
-
-    % Mole fraction constraint: sum(z_i) - 1 = 0
     F(n+1) = sum(z_h) - 1;
 
 end
