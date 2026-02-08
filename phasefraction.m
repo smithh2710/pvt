@@ -2,25 +2,32 @@
 %
 % phasefrac    : Phase fraction
 % comp         : Phase composition
+% converged    : Boolean flag indicating if Newton solver converged
 % K            : K values or equilibrium ratios
 % comp_overall : Overall composition
 % tol          : Iteration tolerance
 % maxiter      : Maximum number of iterations
-function [phasefrac, comp] = phasefraction(K, comp_overall, tol, maxiter)
+function [phasefrac, comp, converged] = phasefraction(K, comp_overall, tol, maxiter)
 
 % Calculate the initial estimate of phase mole fraction.
 phasefrac = phasefracest(K, comp_overall);
 
 if isempty(phasefrac)
-    exit;
+    error('phasefraction:noFeasibleRegion', ...
+          'No feasible region found for Rachford-Rice equation. Check K-values and composition.');
 end
 
 fun = @(x) minfun(K, comp_overall, x);
 grad = @(x) gradfun(K, comp_overall, x);
 hessian = @(x) hessianfun(K, comp_overall, x);
-%maxstepsize = @(x, dx) maxstepsizefun(K, comp_overall, x, dx);
+maxstepsize = @(x, dx) maxstepsizefun(K, comp_overall, x, dx);
 
-phasefrac = newton(fun, grad, hessian, phasefrac, tol, maxiter);
+[phasefrac, converged] = newton(fun, grad, hessian, phasefrac, tol, maxiter, maxstepsize);
+
+if ~converged
+    warning('phasefraction:notConverged', ...
+            'Newton solver did not converge within %d iterations.', maxiter);
+end
 
 comp = calccomp(K, comp_overall, phasefrac);
 
@@ -62,7 +69,11 @@ ncomp = size(comp_overall, 1);
 t = calct(K, phasefrac);
 f = 0;
 for i = 1:ncomp
-    f = f - comp_overall(i)*log(abs(t(i)));
+    if t(i) <= 0
+        f = inf;  % signal infeasibility to solver
+        return;
+    end
+    f = f - comp_overall(i)*log(t(i));
 end
 end
 
@@ -73,7 +84,11 @@ ncomp = size(K,1);              % the number of components.
 t = calct(K, phasefrac);
 temp = zeros(ncomp, 1);
 for i = 1:ncomp
-    temp(i) = comp_overall(i)/t(i);
+    if abs(t(i)) < 1e-15
+        temp(i) = sign(t(i)) * comp_overall(i) / 1e-15;
+    else
+        temp(i) = comp_overall(i)/t(i);
+    end
 end
 g = (ones(ncomp, nphase) - K)'*temp;
 end
@@ -89,7 +104,11 @@ H = zeros(nphase, nphase);
 for j = 1:nphase
     for k = 1:nphase
         for i = 1:ncomp
-            H(j, k) = H(j, k) + (1 - K(i, j))*(1 - K(i, k))*z(i)/(t(i))^2;
+            ti_sq = t(i)^2;
+            if ti_sq < 1e-30
+                ti_sq = 1e-30;
+            end
+            H(j, k) = H(j, k) + (1 - K(i, j))*(1 - K(i, k))*z(i)/ti_sq;
         end
     end
 end
@@ -114,7 +133,7 @@ phasefrac = zeros(nphase,1);
 for i = 1:nphase
     for j = 1:ncomp
         phasefrac(i) = phasefrac(i) + fr(i,j);
-    end 
+    end
 end
 phasefrac = phasefrac/ncomp;
 
@@ -164,40 +183,33 @@ nphase = size(a, 2);
 index = nchoosek(1:ncomp, nphase);
 fr = [];
 for i = 1:size(index,1)
-    
+
     at = [];
     bt = [];
-    
+
     for j = 1:nphase
         at = cat(1, at, a(index(i,j),:));
         bt = cat(1, bt, b(index(i,j)));
     end
-    
+
     phasefrac = at\bt;
     abeta = a*phasefrac;
-    flag = 1;
-    
+    flag = true;
+
     for j = 1:ncomp
         if abeta(j) > b(j)
-            
-            comp = 1;
-            for k = 1:nphase
-                if index(i,k) == j
-                    comp = comp*0;
-                end
+            is_vertex = any(index(i,:) == j);
+            if ~is_vertex
+                flag = false;
+                break;
             end
-            
-            if comp ~= 0
-                flag = flag*0;
-            end
-            
         end
     end
-    
-    if flag == 1
+
+    if flag
         fr = cat(2, fr, phasefrac);
     end
-    
+
 end
 
 end
@@ -221,7 +233,8 @@ for i = 1:ncomp
         if boundary < maxstepsize
             maxstepsize = boundary;
         end
-    end            
+    end
 end
+maxstepsize = max(maxstepsize, 1e-10);  % avoid zero step
 
 end
