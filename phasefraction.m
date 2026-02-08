@@ -1,4 +1,4 @@
-% Calculate phase mole fraction by solving Rachford-Rice equation
+%% Calculate phase mole fraction by solving Rachford-Rice equation
 %
 % phasefrac    : Phase fraction
 % comp         : Phase composition
@@ -13,7 +13,7 @@ function [phasefrac, comp, converged] = phasefraction(K, comp_overall, tol, maxi
 phasefrac = phasefracest(K, comp_overall);
 
 if isempty(phasefrac)
-    error('phasefraction:noFeasibleRegion', 'No feasible region found for Rachford-Rice equation. Check K-values and composition.');
+    error('phasefraction:noFeasibleRegion', 'No feasible region found. Check K-values and composition.');
 end
 
 fun = @(x) minfun(K, comp_overall, x);
@@ -23,15 +23,11 @@ maxstepsize = @(x, dx) maxstepsizefun(K, comp_overall, x, dx);
 
 [phasefrac, converged] = newton(fun, grad, hessian, phasefrac, tol, maxiter, maxstepsize);
 
-if ~converged
-    warning('phasefraction:notConverged', 'Newton solver did not converge within %d iterations.', maxiter);
-end
-
 comp = calccomp(K, comp_overall, phasefrac);
 
 end
 
-% Calculate variables.
+%% Calculate variables.
 
 function t = calct(K, phasefrac)
 % K   : equilibrium constant
@@ -59,7 +55,7 @@ end
 
 end
 
-% Objective function to be minimized
+%% Objective function to be minimized
 % Based on Okuno et al., (2010)
 
 function f = minfun(K, comp_overall, phasefrac)
@@ -67,34 +63,26 @@ ncomp = size(comp_overall, 1);
 t = calct(K, phasefrac);
 f = 0;
 for i = 1:ncomp
-    if t(i) <= 0
-        f = inf;
-        return;
-    end
-    f = f - comp_overall(i)*log(t(i));
+    f = f - comp_overall(i)*log(abs(t(i)));
 end
 end
 
 function g = gradfun(K, comp_overall, phasefrac)
 
-nphase = size(phasefrac, 1);
-ncomp = size(K,1);
+nphase = size(phasefrac, 1); % the number of phases - 1.
+ncomp = size(K,1);              % the number of components.
 t = calct(K, phasefrac);
 temp = zeros(ncomp, 1);
 for i = 1:ncomp
-    if abs(t(i)) < 1e-15
-        temp(i) = sign(t(i)) * comp_overall(i) / 1e-15;
-    else
-        temp(i) = comp_overall(i)/t(i);
-    end
+    temp(i) = comp_overall(i)/t(i);
 end
 g = (ones(ncomp, nphase) - K)'*temp;
 end
 
 function H = hessianfun(K, z, beta)
 
-nphase = size(beta,1);
-ncomp = size(K,1);
+nphase = size(beta,1);  % the number of phase - 1.
+ncomp = size(K,1);      % the number of components
 t = calct(K,beta);
 
 % Calculate Hessian matrix.
@@ -102,18 +90,14 @@ H = zeros(nphase, nphase);
 for j = 1:nphase
     for k = 1:nphase
         for i = 1:ncomp
-            ti_sq = t(i)^2;
-            if ti_sq < 1e-30
-                ti_sq = 1e-30;
-            end
-            H(j, k) = H(j, k) + (1 - K(i, j))*(1 - K(i, k))*z(i)/ti_sq;
+            H(j, k) = H(j, k) + (1 - K(i, j))*(1 - K(i, k))*z(i)/(t(i))^2;
         end
     end
 end
 
 end
 
-% Phase mole fraction Calculation
+%% Phase mole fraction Calculation
 
 function phasefrac = phasefracest(K, comp_overall)
 
@@ -137,13 +121,13 @@ phasefrac = phasefrac/ncomp;
 
 end
 
-% Calculate a feasible region for the minimizing function
+%% Calculate a feasible region for the minimizing function
 % Based on Okuno et al. (2010)
 
 function a = calca(K)
 
-ncomp = size(K,1);
-nphase = size(K,2);
+ncomp = size(K,1);      % the number of components.
+nphase = size(K,2);     % (the number of phases) - 1.
 
 a = ones(ncomp, nphase) - K;
 
@@ -151,8 +135,8 @@ end
 
 function b = calcb(K, comp_overall)
 
-nphase = size(K,2);
-ncomp  = size(K,1);
+nphase = size(K,2); % the number of phases - 1.
+ncomp  = size(K,1); % the number of components.
 
 b = zeros(ncomp, 1);
 
@@ -196,11 +180,18 @@ for i = 1:size(index,1)
 
     for j = 1:ncomp
         if abeta(j) > b(j)
-            is_vertex = any(index(i,:) == j);
-            if ~is_vertex
-                flag = 0;
-                break;
+
+            comp = 1;
+            for k = 1:nphase
+                if index(i,k) == j
+                    comp = comp*0;
+                end
             end
+
+            if comp ~= 0
+                flag = flag*0;
+            end
+
         end
     end
 
@@ -212,11 +203,11 @@ end
 
 end
 
-% Calculate the maximum step size for Newton iteration
+%% Calculate the maximum step size for Newton iteration
 
 function maxstepsize = maxstepsizefun(K, comp_overall, phasefrac, d)
 
-ncomp = size(K, 1);
+ncomp = size(K, 1);         % the number of components
 
 a = calca(K);
 b = calcb(K, comp_overall);
@@ -233,6 +224,5 @@ for i = 1:ncomp
         end
     end
 end
-maxstepsize = max(maxstepsize, 1e-10);
 
 end
