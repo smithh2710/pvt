@@ -13,6 +13,10 @@ function [x, converged] = newton(fun, grad, hessian, x0, tol, maxiter, maxstepfu
   step_norm = 1.0;
   iter = 0;
   while (step_norm > tol && iter < maxiter)
+    f = fun(x);
+    if ~isfinite(f)
+        break;  % infeasible point reached, stop iterating
+    end
     dfdx = grad(x);
     H = hessian(x);
     dx = -H\dfdx;
